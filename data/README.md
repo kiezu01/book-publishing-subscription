@@ -1,0 +1,9 @@
+- `isbn`: mã ISBN của sách
+- `name`: tên sách
+- `author`: tên tác giả
+- `translator`: tên dịch giả
+- `quantity`: số lượng sách đăng ký xuất bản
+- `self`: Sách có phải là tự xuất bản hay không
+- `parner`: Đối tác liên kết
+- `verification`: Số xác nhận đăng ký xuất bản
+- `date`: ngày đăng ký xuất bản

@@ -1,0 +1,580 @@
+---
+title: "xuatbansachvn2021"
+output: html_document
+date: "2022-10-27"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Tóm tắt (abstract)
+
+***33.000 đầu sách với 410 triệu bản sách được xuất bản trong năm 2020 doanh thu ước tính 2.700 tỷ đồng(theo Vietnamnet)*** Xuất bản sách là một thị trường khổng lồ và đầy tiềm năng khai thác. Tuy nhiên, hiện nay dữ liệu xuất bản sách lại chưa được khai thác nhiều, chưa có các bài chia sẻ trên cộng đồng. Vì vậy, chúng em lựa chọn phân tích tập dữ liệu này để tìm ra những giá trị mới, chưa được biết đến trong tập dữ liệu và chia sẻ cho cộng đồng. Chúng em đã sử dụng các phương pháp mô tả, phân tích, thống kê và vận dụng thuật toán cây quyết định. Những kết quả thu được làm chúng em rất hài lòng như: Sách được xuất bản nhiều vào tháng 1 và tháng 9, các tác giả truyện tranh có nhiều sách được đăng ký nhất (Nếu không tính đến các sách phục vụ cho ngành Giáo dục), Nhà xuất bản ĐHSP và GD là 2 nhà xuất bản đăng ký xuất bản sách nhiều nhất (Phục vụ cho việc học tập),... và biến `self` có ảnh hưởng mật thiết đến biến quantity.
+
+## 2.Giới thiệu
+
+Chúng em sử dụng tập dữ liệu được crawl từ trang <https://ppdvn.gov.vn/web/guest/ke-hoach-xuat-ban> (trong năm 2021) bao gồm các biển: - `isbn`: mã ISBN của sách - `name`: tên sách - `author`: tên tác giả - `translator`: tên dịch giả - `quantity`: số lượng sách đăng ký xuất bản - `self`: Sách có phải là tự xuất bản hay không - `partner`: Đối tác liên kết - `verification`: Số xác nhận đăng ký xuất bản - `date`: ngày đăng ký xuất bản - `prefix`: Tiền tố 978 là ký hiệu mã ISBN - `country`: Mã quốc gia (604) - `publisher`: Mã nhà xuất bản - `bookid`: Mã sản phẩm (cuốn sách)bản - `checkdigit`: Số kiểm tra Để trả lời cho những câu hỏi như: - Số đầu sách đăng ký xuất bản trong tháng nào nhiều nhất? - Số lượng sách đăng ký xuất bản trong tháng nào nhiều nhất? - Những nhà xuất bản nào đăng xuất ký xuất bản nhiều sách nhất? - Tác giả nào có số lượng sách đăng ký xuất bản nhiều nhất? - Sách nào được đăng ký xuất bản nhiều nhất? - Tỉ lệ tự xuất bản và sách không tự xuất bản? - Số lượng sách xuất bản theo dộ dài tên sách? - Dịch giả có số lượng sách đăng ký xuất bản nhiều nhất? - Biến `self` có ảnh hưởng đến số lượng sách xuất bản hay không? Và đồng thời cũng EDA dữ liệu để tìm ra những điểm thú vị của tập dữ liệu. Để làm được điều đó chúng em đã sử dụng những phương pháp: - Mô tả dữ liệu - Phân tích tương quan - Phân tích phân bố - Phân tích thống kê - Trực quan hóa dữ liệu - Thuật toán cây quyết định
+
+## Library
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(stringr)
+library(validate)
+library(VIM)
+library(mice)
+library(MASS)
+library(ggpubr)
+library(rpart)
+library(rpart.plot)
+library(scales)
+library(caTools)
+```
+
+## 3.Dữ liệu (data)
+
+-   Dữ liệu được trích xuất từ trang web <https://ppdvn.gov.vn/web/guest/ke-hoach-xuat-ban>, được lọc theo điều kiện là sách được đăng ký xuất bản trong năm 2021.
+-   Dữ liệu được lấy bằng mã R tạo thành nhiều tệp tin csv, mỗi tệp tin thể hiện dữ liệu sách xuất bản trong một ngày, sau đó được ghép lại thành một tệp tin csv duy nhất.
+
+```{r}
+dataf <- read.csv("data/data.csv", encoding = "UTF-8")
+head(dataf)
+```
+
+### Các biến
+
+-   `isbn`: mã ISBN của sách
+-   `name`: tên sách
+-   `author`: tên tác giả
+-   `translator`: tên dịch giả
+-   `quantity`: số lượng sách đăng ký xuất bản
+-   `self`: Sách có phải là tự xuất bản hay không
+-   `partner`: Đối tác liên kết
+-   `verification`: Số xác nhận đăng ký xuất bản
+-   `date`: ngày đăng ký xuất bản
+
+## Data cleaning
+
+### Đổi kiểu dữ liệu của biến `date`
+
+```{r}
+dataf$date <- as.Date(dataf$date)
+```
+
+### Tách mã ISBN
+
+```{r}
+dataf[c('prefix', 'country','publisher','bookid','checkdigit')] <- str_split_fixed(dataf$isbn, '-', 5)
+```
+
+### Các biến được thêm vào gồm
+
+-   `prefix`: Tiền tố 978 là ký hiệu mã ISBN
+-   `country`: Mã quốc gia (604)
+-   `publisher`: Mã nhà xuất bản
+-   `bookid`: Mã sản phẩm (cuốn sách)bản
+-   `checkdigit`: Số kiểm tra
+
+### Xem lại tổng quan dữ liệu
+
+```{r}
+summary(dataf)
+```
+
+-   Nhận xét:
+
+    -   Dữ liệu gồm 59498 dòng và 14 cột, ngoài ra ở cột.
+    -   Ở cột `quantity` giá trị max là 300010000, có vẻ đây là dữ liệu lỗi trong quá trình nhập.
+    -   Ở cột `quantity` có giá trị min là 0, đây là giá trị cần xem xét thêm
+
+    ```{r}
+    dataf[(dataf$prefix==""),]
+    ```
+
+### Nhận xét
+
+Có 4208 (trên tổng số 59498) không có mã isbn. Theo quan sát thấy đa phần số này là lịch, sổ tay, tờ rơi, bloc.
+
+### Lọc bỏ các giá trị lỗi trong cột `quantity`
+
+```{r}
+summary(dataf$quantity)
+```
+
+Biến quantity có giá trị lớn nhất là 300010000 và giá trị nhỏ nhất là 0. Đó là những giá trị rất bất thường, không thể chấp nhận được. Chúng ta cần biết thêm là có bao nhiêu đối tượng, tương ứng với các biến số trên, có giá trị dữ liệu bất thường và đó là những đối tượng nào để chúng ta tìm cách thay thế phù hợp.
+
+Từ những dữ liệu bất thường, không thể chấp nhận trong cột quantity. Chúng ta cần xác định ngoài những giá trị đó còn có những giá trị bất thường nào khác hay không.
+
+```{r}
+head(sort(dataf$quantity),20)
+```
+
+```{r}
+tail(sort(dataf$quantity),20)
+```
+
+Đó là top 20 những giá trị nhỏ nhất và lớn nhất của quantity.
+
+### Tìm kiếm nâng cao với package Validate
+
+```{r}
+ct <- check_that(dataf, quantity > 0, quantity > 100000000)
+summary(ct)
+
+```
+
+-   Với rule1 có tên V1 = "quantity \> 0", hàm check_that cho chúng ta biết có 2485 trường hợp không thỏa mãn, tức là quantity \<= 0 là 2485 trường hợp trong 59498 rows được check.
+
+-   Với rule2 có tên V2 = "quantity \> 100000000", hàm check_that cho chúng ta biết có 1 trường hợp không thỏa mãn.
+
+-   Cả 2 rule đều không có missing value.
+
+```{r}
+barplot(ct[1:2], main="Errors in Quantity")
+
+```
+
+-   Biểu đồ cho ta sự hình dung trực quan số lượng những errors và NA's trong các biến số.
+
+```{r}
+#Sử dụng hàm which để xác định những rows chứa errors
+#quantity < 1
+which(dataf$quantity <= 0)
+```
+
+```{r}
+#quantity > 100000000 
+which(dataf$quantity > 100000000)
+```
+
+-   Đó là ID của những rows có quantity bất thường nêu trên. Nếu số lượng rows có lỗi không nhiều lắm thì chúng ta có thể chỉnh sửa thủ công trong dataset cho từng rows cụ thể khi đã biết ID của chúng.
+
+### Lọc các dữ liệu bị lỗi
+
+```{r}
+dataf<-subset(dataf,dataf$quantity<=100000000 & dataf$quantity>0)
+```
+
+```{r}
+dim(dataf)
+```
+
+-   Nhận thấy tệp dữ liệu đã loại bỏ đi 2486 dữ liệu lỗi (phù hợp với việc tìm kiếm dữ liệu lỗi ở trên)
+
+```{r}
+aggr(dataf[1:14], sortComb=TRUE, sortVar=TRUE, only.miss=TRUE)
+```
+
+-   Phân tích về các biến có missing value, ta nhận thấy có 4 biến là self, translator, partner và isbn. Do đây là dữ liệu đăng ký xuất bản sách của VN nên đây là các biến có thể chấp nhận missing value.
+
+## 4. Trực quan hóa dữ liệu (data visulization)
+
+### 4.1. Biểu đồ số đầu sách đăng ký xuất bản theo tháng
+
+```{r}
+dataf %>%
+  mutate(month = format(date, "%m")) %>%
+  group_by(month) %>%
+  summarise(quantity = n()) %>%
+  ggplot(aes(x = month, y = quantity)) +
+  geom_col() +
+  labs(
+    title = "Số đầu sách đăng ký xuất bản theo tháng",
+    x = "Tháng",
+    y = "Số đầu sách"
+  )
+```
+
+-   Nhận xét:
+    -   Tháng 1 có số đầu sách đăng ký xuất bản nhiều nhất, có thể do đây là tháng đầu năm, nhiều nhà xuất bản đăng ký xuất bản sách mới.
+
+### 4.2. Biểu đồ số lượng sách đăng ký xuất bản theo tháng
+
+```{r}
+dataf %>%
+  mutate(month = format(date, "%m")) %>%
+  group_by(month) %>%
+  summarise(quantity = sum(quantity)) %>%
+  ggplot(aes(x = month, y = quantity)) +
+  geom_col() +
+  labs(
+    title = "Số lượng sách đăng ký xuất bản theo tháng",
+    x = "Tháng",
+    y = "Số lượng sách"
+  )
+```
+
+-   Nhận xét:
+    -   Tháng 1 có số lượng sách đăng ký xuất bản nhiều nhất, có thể do đây là tháng đầu năm, nhiều nhà xuất bản đăng ký xuất bản sách mới.
+    -   Tháng 9 có số lượng sách đăng ký xuất bản lớn, có thể do đây là tháng đầu học kỳ mới, số lượng sách in trong lĩnh vực giáo dục tăng.
+
+### 4.3. Top 10 nhà xuất bản có số lượng sách đăng ký xuất bản nhiều
+
+```{r}
+dataf   %>% 
+  group_by(publisher) %>% 
+  summarise(quantity_per_publisher = sum(quantity)) %>% 
+  arrange(desc(quantity_per_publisher)) %>% 
+  head(10) %>% 
+  ggplot(aes(x = reorder(publisher, quantity_per_publisher), y = quantity_per_publisher)) +
+  geom_col() +
+  labs(
+    title = "Top 10 nhà xuất bản có số lượng sách đăng ký xuất bản nhiều",
+    x = "Nhà xuất bản",
+    y = "Số lượng sách"
+  )
+```
+
+-   Nhận xét:
+-   2 nhà xuất bản có số lượng sách đăng ký xuất bản nhiều nhất là 54 (NXB Đại học Sư Phạm) và 0 (NXB Giáo dục Việt Nam). Vì đây là 2 nhà xuất bản sách phục vụ cho giáo dục, nên có thể do đó là lĩnh vực sách in nhiều nhất.
+
+### 4.4. Top 10 tác giả có số lượng sách đăng ký xuất bản nhiều không phải của NXB ĐHSP và NXB GDVN
+
+Vì 2 NXB trên xuất bản sách giáo khoa và giáo trình nên chúng em muốn quan sát trong những NXB khác, tác giả nào có nhiều tác phẩm được đăng ký xuất bản nhất.
+
+```{r}
+dataf   %>% 
+  filter(publisher != "0" & publisher != "54") %>% 
+  group_by(author) %>% 
+  summarise(quantity_per_author = sum(quantity)) %>% 
+  arrange(desc(quantity_per_author)) %>% 
+  head(10) %>% 
+  ggplot(aes(x = reorder(author, quantity_per_author), y = quantity_per_author)) +
+  geom_col()  +
+  scale_x_discrete(labels = label_wrap(10)) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Top 10 tác giả có số lượng sách đăng ký xuất bản nhiều*",
+    x = "Tác giả",
+    y = "Số lượng sách"
+  )
+```
+
+-   Nhận xét:
+-   Trong những cuốn sách không tính 2 NXB DHSP và GD thì tác giả có số lượng sách đăng ký nhiều nhất là *BỘ Y TẾ VỤ SỨC KHỎE BÀ MẸ - TRẺ EM*, và thứ 2 là *Nhiều tác giả*. Điều này cũng dễ hiểu vì *BỘ Y TẾ VỤ SỨC KHỎE BÀ MẸ - TRẺ EM* là 1 cơ quan trực thuộc Bộ Y tế trong khi *Nhiều tác giả* là tên chung cho những sách có nhiều tác giả.
+-   Top 3 là tác giả *Fujiko F Fujio*, với tác phẩm tiêu biểu là *Doraemon*. Top 4 là *Gosho Aoyama* với tác phẩm tiêu biểu như *Yaiba, Magic Kaito hay Thám tử lừng danh Conan*
+
+### 4.5 Top 10 sách có số lượng đăng ký xuất bản nhiều nhất không phải của NXB ĐHSP và NXB GDVN
+
+Vì 2 NXB trên xuất bản sách giáo khoa và giáo trình nên chúng em muốn quan sát trong những NXB khác, tác giả nào có nhiều tác phẩm được đăng ký xuất bản nhất.
+
+```{r}
+dataf   %>% 
+  filter(publisher != "0" & publisher != "54") %>% 
+  group_by(name) %>% 
+  summarise(quantity_per_title = sum(quantity)) %>% 
+  arrange(desc(quantity_per_title)) %>% 
+  head(10) %>% 
+  ggplot(aes(x = reorder(name, quantity_per_title), y = quantity_per_title)) +
+  geom_col() +
+  scale_x_discrete(labels = label_wrap(10)) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Top 10 sách có số lượng đăng ký xuất bản nhiều nhất",
+    x = "Sách",
+    y = "Số lượng sách"
+  )
+```
+
+-   Nhận xét:
+-   Quyển sách được đăng ký nhiều nhất là *Cẩm nang lần đầu làm mẹ nuôi con (Hành trang chuẩn bị làm mẹ)*, đây là cuốn sách của *BỘ Y TẾ VỤ SỨC KHỎE BÀ MẸ - TRẺ EM*, điều này phù hợp với những phân tích ở trên.
+
+### 4.6 Biến `self` có ảnh hưởng đến số lượng sách xuất bản hay không?
+
+#### 4.6.1 Biểu đồ tỉ lệ số lượng sách tự xuất bản và sách được nhà xuất bản khác xuất bản
+
+```{r}
+dataf   %>% 
+  group_by(self) %>% 
+  summarise(quantity_per_self = sum(quantity)) %>% 
+  ggplot(aes(x = self, y = quantity_per_self)) +
+  geom_col() +
+  labs(
+    title = "Tỉ lệ số lượng sách tự xuất bản và sách được nhà xuất bản khác xuất bản",
+    x = "Sách tự xuất bản",
+    y = "Số lượng sách"
+  )
+```
+
+-   Nhận xét:
+-   Số lượng lớn sách được tự xuất bản. Tuy nhiên, có thể do sự ảnh hưởng của sự vượt trội số lượng sách giáo dục. Vì vậy ta phân tích thêm tỉ lệ số đầu sách tự xuất bản. \#### 4.6.2. Biểu đồ tỉ lệ số đầu sách tự xuất bản và sách được nhà xuất bản khác xuất bản
+
+```{r}
+dataf   %>% 
+  group_by(self) %>% 
+  summarise(count_per_self = n()) %>% 
+  ggplot(aes(x = self, y = count_per_self)) +
+  geom_col() +
+  labs(
+    title = "Tỉ lệ số đầu sách tự xuất bản và sách được nhà xuất bản khác xuất bản",
+    x = "Sách tự xuất bản",
+    y = "Số đầu sách"
+  )
+```
+
+Nhận xét: + Thực sự tỉ lệ số đầu sách tự xuất bản (x) ít hơn số đầu sách có sự hợp tác xuất bản ( "" và NA)
+
+### 4.7. Số lượng sách đăng ký xuất bản theo độ dài tên sách?
+
+```{r}
+dataf   %>% 
+  mutate(title_length = nchar(name)) %>%
+  group_by(title_length) %>% 
+  summarise(quantity_per_title_length = sum(quantity)) %>% 
+  ggplot(aes(x = title_length, y = quantity_per_title_length)) +
+  geom_col() +
+  labs(
+    title = "Số lượng sách đăng ký xuất bản theo độ dài tên sách",
+    x = "Độ dài tên sách",
+    y = "Số lượng sách"
+  )
+```
+
+-Nhận xét: + Số ít sách có tên dài hơn 100 ký tự. Ta sẽ quan sát lại với độ dài tối đa 100 để có thể quan sát dễ hơn.
+
+```{r}
+dataf   %>% 
+  mutate(title_length = nchar(name)) %>%
+  filter(title_length <= 100 ) %>%
+  group_by(title_length) %>% 
+  summarise(quantity_per_title_length = sum(quantity)) %>% 
+  ggplot(aes(x = title_length, y = quantity_per_title_length)) +
+  geom_col() +
+  labs(
+    title = "Số lượng sách đăng ký xuất bản theo độ dài tên sách",
+    x = "Độ dài tên sách",
+    y = "Số lượng sách"
+  )
+```
+
+Nhận xét: Số lượng ký tự trong khoảng 25 \~ 60 được đăng ký nhiều hơn.
+
+### 4.8. Top 10 dịch giả có số lượng sách đăng ký xuất bản nhiều
+
+Để tiện quan sát, chúng ta sẽ filter giá trị NA và rỗng
+
+```{r}
+dataf   %>% 
+  group_by(translator) %>% 
+  filter(translator!="" & translator!= "NA") %>% 
+  summarise(quantity_per_translator = sum(quantity)) %>% 
+  arrange(desc(quantity_per_translator)) %>% 
+  head(10) %>% 
+  ggplot(aes(x = reorder(translator, quantity_per_translator), y = quantity_per_translator)) +
+  geom_col() +
+  scale_x_discrete(labels = label_wrap(10)) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Top 10 dịch giả có số lượng sách đăng ký xuất bản nhiều",
+    x = "Dịch giả",
+    y = "Số lượng sách"
+  )
+```
+
+-   Nhận xét:
+-   Top 1 là *Nhiều người dịch*, nhiều dịch giả cùng dịch là điều phổ biến và dẫn đầu là việc hoàn toàn dễ hiểu
+
+## 5. Mô hình hóa dữ liệu (data modeling)
+
+### 5.1 Tự xuất bản có ảnh hưởng đến số lượng sách xuất bản hay không?
+
+```{r}
+#sử dụng hàm tapply
+tapply(dataf$quantity,dataf$self, mean)
+```
+
+-   x là sách tự xuất bản.
+
+-   Với phân tích về các biến có missing value, ta nhận thấy rằng biến self có tới hơn 50% missing value. Tuy nhiên ta nhận thấy rằng mean quantity của có sự chênh lệch rõ rệt giữa sách tự xuất bản và sách không tự xuất bản.
+
+-   Ta có thể kết luận rằng biến self có ảnh hưởng mật thiết đến biến quantity.\
+
+### 5.1.1 Phân tích tương quan giữa self và quantity
+
+```{r}
+options(scipen=999)
+self <- dataf$self
+quantity <- dataf$quantity
+ggscatter(data=dataf, x = "self", y = "quantity", main = "Biểu đồ phân tán")+
+  geom_smooth(method="lm", se=F)
+```
+
+```{r}
+boxplot(dataf$quantity ~ dataf$self)
+```
+
+-   Trên biểu đồ ta có thể nhận thấy rằng có 3 kiểu dữ liệu ở biến self. Đó là "","x" và "NA". Khi biến self = "x" thì có khả năng biến quantity là 100000000. Trong khi "" và "NA" không có giá trị như vậy. Điều này phù hợp so với việc phân tích sự chênh lệch giữa self và quantity trong phân tích ở trên.
+-   Vì sách chỉ có thể tự xuất bản hoặc không thể tự xuất bản. Cho nên self có 3 biến có thể là trong quá trình crawl dữ liệu gặp phải lỗi trong quá trình chuyển dữ liệu. Vì thế ta cần gộp "" và "NA" thành một.
+
+### 5.1.2 Chúng ta tiến hành gom nhóm các dữ liệu missing và NA ở biến self
+
+```{r}
+dataf <- dataf %>%
+  mutate(self_new = case_when(is.na(self) ~ "", TRUE ~ self) %>% as.factor())
+```
+
+```{r}
+dataf$self_new <- as.character(dataf$self_new)
+```
+
+```{r}
+#gán giá trị để phân tích} 
+dataf$self_new[dataf$self_new== "x"] <- "1" 
+dataf$self_new[dataf$self_new== ""] <- "0"
+```
+
+```{r}
+dataf$self_new <- as.numeric(dataf$self_new)
+```
+
+```{r}
+#mean đã thay đổi sau khi gom nhóm 
+tapply(dataf$quantity,dataf$self_new, mean)
+```
+
+```{r}
+ggplot(dataf, aes(x=dataf$self_new)) + geom_bar()
+```
+
+```{r}
+prop.table(table(dataf$self_new))
+```
+
+Sách tự xuất bản tuy chỉ chiếm bằng 0.4 sách không tự xuất bản tuy nhiên số lượng đăng ký lại lớn hơn rất nhiều.
+
+### 5.2 Xây dựng thuật toán cây
+
+-   Câu hỏi: liệu rằng những biến khác có liên quan như thế nào đến kiểu xuất bản hay không?
+
+### 5.2.1 Tách DATE
+
+```{r}
+# tách date 
+dataf[c('year', 'month','date')] <- str_split_fixed(dataf$date, '-', 3)
+```
+
+```{r}
+#Lựa chọn các biến tiến hành phân tích
+dataf <- subset(dataf, select = -c(self,name,translator,author,partner,prefix,country,bookid,date,year))
+dataf = dataf[complete.cases(dataf),]
+```
+
+```{r}
+set.seed(100)
+split <- sample.split(dataf$self_new, SplitRatio = 0.75)
+mau_xay_dung <- subset(dataf, split = TRUE)
+mau_kiem_dinh <- subset(dataf, split = FALSE)
+```
+
+```{r}
+#đổi kiểu dữ liệu factor cho self
+mau_xay_dung$self_new <- as.factor(mau_xay_dung$self_new)
+mau_kiem_dinh$self_new <- as.factor(mau_kiem_dinh$self_new)
+```
+
+```{r}
+dataf$publisher <- as.numeric(dataf$publisher)
+dataf$month <- as.numeric(dataf$month)
+dataf$quantity <- as.numeric(dataf$quantity)
+dataf$self_new <-as.factor(dataf$self_new)
+```
+
+```{r}
+Tree_1 <- rpart(self_new ~ quantity+month+checkdigit, 
+                method = "class", data = mau_xay_dung, control=rpart.control(minbucket=25))
+
+```
+
+```{r}
+rpart.plot(Tree_1)
+```
+
+-   Chú thích:
+
+-   Giá trị đầu tiên: 0 - sách không tự xuất bản, 1 - sách tự xuất bản.
+
+-   Giá trị thứ hai: % dự đoán trên mẫu.
+
+-   Giá trị thứ ba: % phép thử trên mẫu.
+
+### 5.2.2 Dự đoán và tính toán dựa trên mẫu kiểm định
+
+```{r}
+#Tạo biến dự đoán dựa trên mẫu kiểm định
+Predict_test_tree_1 <- predict(Tree_1, newdata = mau_kiem_dinh, type = "class")
+```
+
+```{r}
+table(mau_kiem_dinh$self_new,Predict_test_tree_1)
+```
+
+### 5.2.3 Độ chính xác trên mẫu kiểm định
+
+```{r}
+#Gán table vào biến 
+matrix <- table(mau_kiem_dinh$self_new, Predict_test_tree_1)
+```
+
+```{r}
+#Độ chính xác trên mẫu kiểm định
+(matrix[1,1]+matrix[2,2])/nrow(mau_kiem_dinh)
+```
+
+## 6. Thực nghiệm, kết quả, và thảo luận (experiments, results, and discussions)
+
+### Thực nghiệm
+
+-   Ở thuật toán cây ở trên, nhóm em sử dụng cross - validation. Chia thành 3 phần cho mẫu xây dựng và 1 phần cho mẫu kiểm định.
+
+### Kết quả
+
+-   confusion matrix: được gán bằng Predict_test_tree_1. Với Tree_1 được xây dựng dựa trên mẫu xây dựng, và data là mẫu kiểm định.
+
+-   có 36664 dự đoán sách không tự xuất bản và thật sự có 36664 sách không tự xuất bản.
+
+-   có 6283 dự đoán sách tự xuất bản và thật sự có 6283 sách tự xuất bản.
+
+-   có 9701 dự đoán sách tự xuất bản nhưng thực tế thì không được xuất bản.
+
+-   có 1647 dự đoán sách không tự xuất bản nhưng thực tế thì tự xuất bản.
+
+-   Accuracy - độ chính xác: được tính dựa trên tổng số TRUE POSITIVE và TRUE NEGATIVE và chia cho tổng số phép thử của mẫu kiểm định. Kết quả thu được rất đáng tin cậy với giá trị thu được là 0.7909936.
+
+## 7. Kết luận (conclusions)
+
+-   Với phân tích về các biến có missing value, ta nhận thấy rằng biến self có tới hơn 50% missing value. Tuy nhiên ta nhận thấy rằng mean quantity của có sự chênh lệch rõ rệt giữa sách tự xuất bản và sách không tự xuất bản.
+
+-   Ta có thể kết luận rằng biến self có ảnh hưởng mật thiết đến biến quantity. Đây là motivation cho nhóm chúng em quyết định đến việc xây dựng thuật toán cây cho tệp dữ liệu.
+
+-   Sau khi tiến hành phân tích, nhóm em nhận thấy rằng số lượng sách xuất bản có liên quan mật thiết tới việc sách có tự xuất bản hay không. Điều này là vượt ngoài mong đợi với nhóm vì ban đầu không nghĩ tới có sự liên quan như thế giữa chúng.
+
+-   Thuật toán cây có hiệu suất cao nhất vì đối với tệp dữ liệu của nhóm chúng em nếu phân tích bằng hồi quy thì sẽ gây ra sai sót rất lớn trong quá trình làm. Vì dữ liệu của nhóm có sự missing value là tương đối lớn.
+
+## 8. Đóng góp (contributions)
+
+-   Kiên:
+-   Nhóm trưởng
+-   Đặt câu hỏi, phân công công việc
+-   Tìm kiếm nâng cao với validate
+-   Phân tích tương quan
+-   Xây dựng thuật toán cây
+-   Linh:
+-   Crawl và tiền xử lý dữ liệu
+-   Trực quan hóa dữ liệu
+
+## 9. Tham khảo (references)
+
+-   Thư viện tidyverse
+-   Thư viện ggplot2
+-   Thư viện stringr
+-   Thư viện validate
+-   Thư viện VIM
+-   Thư viện mice
+-   Thư viện MASS
+-   Thư viện ggpubr
+-   Thư viện ggplot2
+-   Thư viện rpart
+-   Thư viện scales
+-   Thư viện caTools

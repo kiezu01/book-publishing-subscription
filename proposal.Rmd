@@ -1,0 +1,387 @@
+---
+title: "xuatbansachvn2021"
+output: html_document
+date: "2022-10-27"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Library
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+```
+
+## Data
+
+-   Dữ liệu được trích xuất từ trang web <https://ppdvn.gov.vn/web/guest/ke-hoach-xuat-ban>, được lọc theo điều kiện là sách được đăng ký xuất bản trong năm 2021.
+-   Dữ liệu được lấy bằng mã R (file `crawl.r`) tạo thành nhiều tệp tin csv, mỗi tệp tin thể hiện dữ liệu sách xuất bản trong một ngày, sau đó được ghép lại thành một tệp tin csv duy nhất (file `merge.r`).
+
+```{r}
+dataf <- read.csv("data/data.csv", encoding = "UTF-8")
+head(dataf)
+```
+
+### Các biến
+
+-   `isbn`: mã ISBN của sách
+-   `name`: tên sách
+-   `author`: tên tác giả
+-   `translator`: tên dịch giả
+-   `quantity`: số lượng sách đăng ký xuất bản
+-   `self`: Sách có phải là tự xuất bản hay không
+-   `partner`: Đối tác liên kết
+-   `verification`: Số xác nhận đăng ký xuất bản
+-   `date`: ngày đăng ký xuất bản
+
+## Data cleaning
+
+### Đổi kiểu dữ liệu của biến `date`
+
+```{r}
+dataf$date <- as.Date(dataf$date)
+```
+
+### Tách mã ISBN
+
+```{r}
+dataf[c('prefix', 'country','publisher','bookid','checkdigit')] <- str_split_fixed(dataf$isbn, '-', 5)
+```
+
+## EDA
+
+```{r}
+summary(dataf)
+```
+
+-   Nhận xét:
+    -   Dữ liệu gồm 59246 dòng và 9 cột, ngoài ra ở cột `verification` có thể tách nội cuối cuối thành tên xuất bản.
+    -   Ở cột `quantity` giá trị max là 300010000, có vẻ đây là dữ liệu lỗi trong quá trình nhập.
+    -   Ở cột `quantity` có giá trị min là 0, đây là giá trị cần xem xét thêm.
+
+### Biểu đồ số đầu sách đăng ký xuất bản theo tháng
+
+```{r}
+dataf %>%
+  mutate(month = format(date, "%m")) %>%
+  group_by(month) %>%
+  summarise(quantity = n()) %>%
+  ggplot(aes(x = month, y = quantity)) +
+  geom_col() +
+  labs(
+    title = "Số đầu sách đăng ký xuất bản theo tháng",
+    x = "Tháng",
+    y = "Số đầu sách"
+  )
+```
+
+-   Nhận xét:
+    -   Tháng 1 có số đầu sách đăng ký xuất bản nhiều nhất, có thể do đây là tháng đầu năm, nhiều nhà xuất bản đăng ký xuất bản sách mới.
+
+### Biểu đồ số lượng sách đăng ký xuất bản theo tháng
+
+```{r}
+dataf %>%
+  mutate(month = format(date, "%m")) %>%
+  group_by(month) %>%
+  summarise(quantity = sum(quantity)) %>%
+  ggplot(aes(x = month, y = quantity)) +
+  geom_col() +
+  labs(
+    title = "Số lượng sách đăng ký xuất bản theo tháng",
+    x = "Tháng",
+    y = "Số lượng sách"
+  )
+```
+
+-   Nhận xét:
+    -   Tháng 1 có số lượng sách đăng ký xuất bản nhiều nhất, có thể do đây là tháng đầu năm, nhiều nhà xuất bản đăng ký xuất bản sách mới.
+    -   Tháng 9 có số lượng sách đăng ký xuất bản lớn, có thể do đây là tháng đầu học kỳ mới, số lượng sách in trong lĩnh vực giáo dục tăng.
+
+## Kế hoạch phân tích
+
+### Data cleaning
+
+-   Lọc bỏ các giá trị lỗi trong cột `quantity`
+-   Tách nội dung cột `verification` thành tên xuất bản
+-   Sửa lại các kiểu dữ liệu phù hơp cho các biến\
+
+```{r}
+summary(dataf$quantity)
+```
+
+Biến quantity có giá trị lớn nhất là 300010000 và giá trị nhỏ nhất là 0. Đó là những giá trị rất bất thường, không thể chấp nhận được. Chúng ta cần biết thêm là có bao nhiêu đối tượng, tương ứng với các biến số trên, có giá trị dữ liệu bất thường và đó là những đối tượng nào để chúng ta tìm cách thay thế phù hợp.
+
+Từ những dữ liệu bất thường, không thể chấp nhận trong cột quantity. Chúng ta cần xác định ngoài những giá trị đó còn có những giá trị bất thường nào khác hay không.
+
+```{r}
+head(sort(dataf$quantity),20)
+```
+
+```{r}
+tail(sort(dataf$quantity),20)
+```
+
+Đó là top 20 những giá trị nhỏ nhất và lớn nhất của quantity.
+
+### Tìm kiếm nâng cao với package Validate
+
+```{r}
+#install.packages(validate)
+library(validate)
+```
+
+```{r}
+ct <- check_that(dataf, quantity > 0, quantity > 100000000)
+summary(ct)
+
+```
+
+-   Với rule1 có tên V1 = "quantity \> 0", hàm check_that cho chúng ta biết có 2485 trường hợp không thỏa mãn, tức là quantity \<= 0 là 2485 trường hợp trong 59498 rows được check.
+
+-   Với rule2 có tên V2 = "quantity \> 100000000", hàm check_that cho chúng ta biết có 1 trường hợp không thỏa mãn.
+
+-   Cả 2 rule đều không có missing value.
+
+```{r}
+barplot(ct[1:2], main="Errors in Quantity")
+
+```
+
+-   Biểu đồ cho ta sự hình dung trực quan số lượng những errors và NA's trong các biến số.
+
+```{r}
+#Sử dụng hàm which để xác định những rows chứa errors
+#quantity < 1
+which(dataf$quantity <= 0)
+```
+
+```{r}
+#quantity > 100000000 
+which(dataf$quantity > 100000000)
+```
+
+-   Đó là ID của những rows có quantity bất thường nêu trên. Nếu số lượng rows có lỗi không nhiều lắm thì chúng ta có thể chỉnh sửa thủ công trong dataset cho từng rows cụ thể khi đã biết ID của chúng.
+
+```{r}
+dim(dataf)
+```
+
+### Lọc các dữ liệu bị lỗi
+
+```{r}
+dataf<-subset(dataf,dataf$quantity<=100000000 & dataf$quantity>0)
+```
+
+```{r}
+dim(dataf)
+```
+
+-   Nhận thấy tệp dữ liệu đã loại bỏ đi 2486 dữ liệu lỗi (phù hợp với việc tìm kiếm dữ liệu lỗi ở trên)
+
+```{r}
+#install.packages("VIM")
+#install.packages("mice")
+library(VIM)
+library(mice)
+```
+
+```{r}
+aggr(dataf[1:9], sortComb=TRUE, sortVar=TRUE, only.miss=TRUE)
+
+
+```
+
+-   Phân tích về các biến có missing value, ta nhận thấy có 4 biến là self, translator, partner và isbn. Do đây là dữ liệu đăng ký xuất bản sách của VN nên đây là các biến có thể chấp nhận missing value.
+
+### Các câu hỏi
+
+-   Các biến `self` có ảnh hưởng đến số lượng sách xuất bản hay không?
+-   Dịch bệnh covid có tăng số lượng sách liên quan đến y tế hay không?
+-   Số lượng đăng ký sách xuất bản có tăng theo thời gian hay không?
+-   Số lượng đăng ký xuất bản có một phân bố chung trong các tháng hay không?
+-   Nhà xuất bản có ảnh hưởng đến số lượng sách xuất bản hay không?
+
+```{r}
+#sử dụng hàm tapply
+tapply(dataf$quantity,dataf$self, mean)
+```
+
+-   x là sách tự xuất bản.
+
+-   Với phân tích về các biến có missing value, ta nhận thấy rằng biến self có tới hơn 50% missing value. Tuy nhiên ta nhận thấy rằng mean quantity của có sự chênh lệch rõ rệt giữa sách tự xuất bản và sách không tự xuất bản.
+
+-   Ta có thể kết luận rằng biến self có ảnh hưởng mật thiết đến biến quantity.\
+
+### Phân tích tương quan giữa self và quantity
+
+```{r}
+#install.packages("MASS")
+#install.packages("ggpubr")
+#install.package("ggplot2")
+library(MASS)
+library(ggpubr)
+library(ggplot2)
+```
+
+```{r}
+self <- dataf$self
+quantity <- data$quantity
+ggscatter(data=dataf, x = 'self', y = 'quantity', main = "Biểu đồ phân tán")+
+  geom_smooth(method="lm", se=F)
+```
+
+```{r}
+boxplot(dataf$quantity ~ dataf$self)
+```
+
+-   Trên biểu đồ ta có thể nhận thấy rằng có 3 kiểu dữ liệu ở biến self. Đó là "","x" và "NA". Khi biến self = "x" thì có khả năng biến quantity là 100000000. Trong khi "" và "NA" không có giá trị như vậy. Điều này phù hợp so với việc phân tích sự chênh lệch giữa self và quantity trong phân tích ở trên.
+-   Vì sách chỉ có thể tự xuất bản hoặc không thể tự xuất bản. Cho nên self có 3 biến có thể là trong quá trình crawl dữ liệu gặp phải lỗi trong quá trình chuyển dữ liệu. Vì thế ta cần gộp "" và "NA" thành một.
+
+### Chúng ta tiến hành gom nhóm các dữ liệu missing và NA ở biến self
+
+```{r}
+dataf <- dataf %>%
+  mutate(self_new = case_when(is.na(self) ~ "", TRUE ~ self) %>% as.factor())
+```
+
+```{r}
+dataf$self_new <- as.character(dataf$self_new)
+```
+
+```{r}
+#gán giá trị để phân tích} 
+dataf$self_new[dataf$self_new== "x"] <- "1" 
+dataf$self_new[dataf$self_new== ""] <- "0"
+```
+
+```{r}
+dataf$self_new <- as.numeric(dataf$self_new)
+```
+
+```{r}
+#mean đã thay đổi sau khi gom nhóm 
+tapply(dataf$quantity,dataf$self_new, mean)
+```
+
+```{r}
+ggplot(dataf, aes(x=dataf$self_new)) + geom_bar()
+```
+
+```{r}
+prop.table(table(dataf$self_new))
+```
+
+Sách tự xuất bản tuy chỉ chiếm bằng 0.4 sách không tự xuất bản tuy nhiên số lượng đăng ký lại lớn hơn rất nhiều.
+
+# Xây dựng thuật toán cây
+
+-   Câu hỏi: liệu rằng những biến khác có liên quan như thế nào đến kiểu xuất bản hay không?
+
+### Tách DATE
+
+```{r}
+# tách date 
+dataf[c('year', 'month','date')] <- str_split_fixed(dataf$date, '-', 3)
+```
+
+```{r}
+#Lựa chọn các biến tiến hành phân tích
+dataf <- subset(dataf, select = -c(self,name,translator,author,partner,prefix,country,bookid,date,year))
+dataf = dataf[complete.cases(dataf),]
+```
+
+```{r}
+#install.packages("caTools")
+library("caTools")
+```
+
+```{r}
+set.seed(100)
+split <- sample.split(dataf$self_new, SplitRatio = 0.75)
+mau_xay_dung <- subset(dataf, split = TRUE)
+mau_kiem_dinh <- subset(dataf, split = FALSE)
+```
+
+```{r}
+#đổi kiểu dữ liệu factor cho self
+mau_xay_dung$self_new <- as.factor(mau_xay_dung$self_new)
+mau_kiem_dinh$self_new <- as.factor(mau_kiem_dinh$self_new)
+```
+
+```{r}
+#cài đặt thư viện rpart, sử dụng cho mô hình
+#install.packages("rpart")
+#install.packages("rpart.plot")
+library("rpart")
+library("rpart.plot")
+```
+
+```{r}
+dataf$publisher <- as.numeric(dataf$publisher)
+dataf$month <- as.numeric(dataf$month)
+dataf$quantity <- as.numeric(dataf$quantity)
+dataf$self_new <-as.factor(dataf$self_new)
+```
+
+```{r}
+options(scipen=999)
+Tree_1 <- rpart(self_new ~ quantity+month+checkdigit, 
+                method = "class", data = mau_xay_dung, control=rpart.control(minbucket=25))
+
+```
+
+```{r}
+rpart.plot(Tree_1)
+```
+
+-   Chú thích:
+
+-   Giá trị đầu tiên: 0 - sách không tự xuất bản, 1 - sách tự xuất bản.
+
+-   Giá trị thứ hai: % dự đoán trên mẫu.
+
+-   Giá trị thứ ba: % phép thử trên mẫu.
+
+### Dự đoán và tính toán dựa trên mẫu kiểm định
+
+```{r}
+#Tạo biến dự đoán dựa trên mẫu kiểm định
+Predict_test_tree_1 <- predict(Tree_1, newdata = mau_kiem_dinh, type = "class")
+```
+
+```{r}
+table(mau_kiem_dinh$self_new,Predict_test_tree_1)
+```
+
+-   Giải thích số liệu:
+
+-   có 36664 dự đoán sách không tự xuất bản và thật sự có 36664 sách không tự xuất bản.
+
+-   có 6283 dự đoán sách tự xuất bản và thật sự có 6283 sách tự xuất bản.
+
+### Độ chính xác trên mẫu kiểm định
+
+```{r}
+#Gán table vào biến 
+matrix <- table(mau_kiem_dinh$self_new, Predict_test_tree_1)
+```
+
+```{r}
+#Độ chính xác trên mẫu kiểm định
+(matrix[1,1]+matrix[2,2])/nrow(mau_kiem_dinh)
+```
+
+### Các phương pháp phân tích
+
+-   Mô tả dữ liệu
+-   Phân tích tương quan
+-   Phân tích phân bố
+-   Phân tích thống kê
+-   Trực quan hóa dữ liệu
+-   Tìm kiếm các từ khóa liên quan đến y tế trong các tên sách
+-   Kiểm định giả thuyết về số lượng sách liên đến ý tế.
+-   Kiểm định giả thuyết về số lượng sách xuất bản theo tháng.
