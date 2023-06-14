@@ -6,5 +6,5 @@
 |Full name | ID| Tasks|
 |---|---|---|
 |Nguyen Duc Linh | 20133007| - Crawl and data processing <br> - Data visualization
-|Vu Trung Kien | 20133060| - Assign tasks, Make a questions <br> - Advanced search with validate <br> - Correlation analysis <br> - Building a tree algorithm
+|Vu Trung Kien | 20133060| - Assign tasks and make a questions <br> - Advanced search with validate <br> - Correlation analysis <br> - Building a tree algorithm
 
