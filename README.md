@@ -1,10 +1,10 @@
-# xuatbansachvn2021
+# DATA ANALYSIS OF BOOK PUBLICATION REGISTRATION IN 2021
 
-## Đề tài cuối kỳ Lập trình R - học kỳ 1 năm 2022
+## Final project R Programing for Analytics - 2022(semester 1)
 
-### Sinh viên thực hiện:
-|Họ và tên | MSV|
+### Group member:
+|Full name | ID| Tasks|
 |---|---|
-|Lã Minh Phúc | 20133079|
-|Nguyễn Đưc Linh | 20133007|
-|Vũ Trung Kiên | 20133060|
+|Nguyen Duc Linh | 20133007| - Crawl and data processing <br> - Data visualization
+|Vu Trung Kien | 20133060| - Assign tasks, Make a questions <br> - Advanced search with validate <br> - Correlation analysis <br> - Building a tree algorithm
+
